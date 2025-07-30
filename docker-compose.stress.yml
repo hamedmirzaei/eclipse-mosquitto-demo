@@ -1,0 +1,94 @@
+# Define default values for the number of internal clients
+# These can be overridden by shell environment variables when running docker-compose up
+x-defaults: &defaults
+  NUM_PUBLISHER_CLIENTS: ${NUM_PUBLISHER_CLIENTS:-1} # Default 1 internal publisher client
+  NUM_MESSAGES_PER_CLIENT: ${NUM_MESSAGES_PER_CLIENT:-100} # Default 100 messages per internal publisher client
+  NUM_SUBSCRIBER_CLIENTS: ${NUM_SUBSCRIBER_CLIENTS:-1} # Default 1 internal subscriber client
+  SUBSCRIBER_DURATION_SECONDS: ${SUBSCRIBER_DURATION_SECONDS:-30} # Default 30s listen duration for internal subscribers
+  MQTT_TOPIC_BASE: ${MQTT_TOPIC_BASE:-stress/test} # Base topic for stress test messages
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.18 # Use a specific version for stability
+    container_name: mosquitto-broker
+    ports:
+      - "1883:1883" # Standard MQTT port
+      - "9001:9001" # WebSocket port (useful for browser-based clients later)
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf # Mount our custom config
+      - ./mosquitto/data:/mosquitto/data # Persistent data for retained messages, etc.
+      - ./mosquitto/log:/mosquitto/log # For Mosquitto logs
+    restart: always # Keep the broker running
+    healthcheck: # Basic health check to ensure broker is ready
+      test: [ "CMD", "sh", "-c", "nc -z localhost 1883" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Publisher Service (now capable of spawning multiple clients internally)
+  publisher_stress:
+    build:
+      context: ./publisher
+      dockerfile: Stress.Dockerfile
+    container_name: mqtt-publisher-stress # Can use fixed name now, as only one container instance expected
+    environment:
+      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_PORT=1883
+      - MQTT_TOPIC_BASE=${MQTT_TOPIC_BASE} # Use base topic from x-defaults
+      - NUM_PUBLISHER_CLIENTS=${NUM_PUBLISHER_CLIENTS} # Pass number of internal clients to Python
+      - NUM_MESSAGES_PER_CLIENT=${NUM_MESSAGES_PER_CLIENT} # Pass messages per internal client to Python
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    restart: "no" # The single publisher container runs its course and exits
+    # The CMD in Dockerfile.stress should point to publisher_multi_client.py
+    # No 'command' override needed here if the CMD is correctly set to the multi-client script
+    # and it expects environment variables for configuration.
+
+  # Subscriber Service (now capable of spawning multiple clients internally)
+  subscriber_stress:
+    build:
+      context: ./subscriber
+      dockerfile: Stress.Dockerfile
+    container_name: mqtt-subscriber-stress # Can use fixed name now, as only one container instance expected
+    environment:
+      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_PORT=1883
+      - MQTT_TOPIC_WILDCARD=${MQTT_TOPIC_BASE}/# # Subscribe to all stress test topics under base
+      - NUM_SUBSCRIBER_CLIENTS=${NUM_SUBSCRIBER_CLIENTS} # Pass number of internal clients to Python
+      - SUBSCRIBER_DURATION_SECONDS=${SUBSCRIBER_DURATION_SECONDS} # Pass duration per internal client to Python
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    restart: "no" # The single subscriber container runs for a duration and exits
+    # The CMD in Dockerfile.stress should point to subscriber_multi_client.py
+    # No 'command' override needed here if the CMD is correctly set to the multi-client script
+    # and it expects environment variables for configuration.
+
+  # Node-RED Dashboard Service (Optional, but good for real-time monitoring)
+  node-red-stress:
+    image: nodered/node-red:latest
+    container_name: node-red-dashboard-stress
+    ports:
+      - "1880:1880"
+    volumes:
+      # Ensure these paths are correct relative to your docker-compose.yml
+      # For standard Node-RED, /data is the userDir
+      - ./node_red/data:/data # This will create 'data' inside node_red dir for persistence
+      # These two lines are often not needed if you mount /data, as Node-RED manages them within /data
+      # However, if you have very specific pre-configured flows.json/settings.js outside of /data
+      # that you want to overlay, keep them. Otherwise, Node-RED will create them inside ./node_red/data
+      # - ./node_red/settings.js:/data/settings.js
+      # - ./node_red/flows.json:/data/flows.json
+      - node_red_node_modules:/data/node_modules # For installed Node-RED nodes
+    environment:
+      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_PORT=1883
+      - TZ=America/Edmonton # Current location is Edmonton, Alberta, Canada.
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    restart: always
+
+volumes:
+  node_red_node_modules: # Defined a named volume for node_modules persistence
