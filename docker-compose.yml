@@ -1,0 +1,70 @@
+services:
+  # MQTT Broker Service
+  mosquitto:
+    image: eclipse-mosquitto:2.0.18 # Use a specific version for stability
+    container_name: mosquitto-broker
+    ports:
+      - "1883:1883" # Standard MQTT port
+      - "9001:9001" # WebSocket port (useful for browser-based clients later)
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf # Mount our custom config
+      - ./mosquitto/data:/mosquitto/data # Persistent data for retained messages, etc.
+      - ./mosquitto/log:/mosquitto/log # For Mosquitto logs
+    restart: always # Keep the broker running
+    healthcheck: # Basic health check to ensure broker is ready
+      test: ["CMD", "sh", "-c", "nc -z localhost 1883"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Python Publisher Service
+  publisher:
+    build: ./publisher # Build from the Dockerfile in python_publisher directory
+    container_name: mqtt-publisher
+    environment:
+      # Use the service name 'mosquitto' as the hostname for inter-container communication
+      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_PORT=1883
+      - MQTT_TOPIC=docker/test/message
+    depends_on:
+      mosquitto:
+        condition: service_healthy # Ensure broker is healthy before starting publisher
+    restart: on-failure # Restart if the publisher script crashes
+    # command: python publisher.py # Explicitly run the command, though CMD in Dockerfile is usually sufficient
+
+  # Python Subscriber Service
+  subscriber:
+    build: ./subscriber # Build from the Dockerfile in python_subscriber directory
+    container_name: mqtt-subscriber
+    environment:
+      # Use the service name 'mosquitto' as the hostname for inter-container communication
+      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_PORT=1883
+      - MQTT_TOPIC=docker/test/# # Wildcard topic for subscriber
+    depends_on:
+      mosquitto:
+        condition: service_healthy # Ensure broker is healthy before starting subscriber
+    restart: on-failure # Restart if the subscriber script crashes
+    # command: python subscriber.py # Explicitly run the command
+
+  # Node-RED Dashboard Service
+  node-red:
+    image: nodered/node-red:latest # Use the official Node-RED image
+    container_name: node-red-dashboard
+    ports:
+      - "1880:1880" # Node-RED web UI
+    volumes:
+      - ./node_red/data:/data # Persist Node-RED flows and settings
+      - ./node_red/settings.js:/data/settings.js
+      - ./node_red/flows.json:/data/flows.json
+      - node_red_node_modules:/data/node_modules
+    environment:
+      - NODE_RED_ENABLE_PROJECTS=true # Optional: Enable Node-RED Projects feature
+      - TZ=America/Edmonton # Set timezone for Node-RED logs and timestamps
+    depends_on:
+      mosquitto:
+        condition: service_healthy # Ensure broker is ready before Node-RED starts
+    restart: always
+
+volumes:
+  node_red_node_modules:
