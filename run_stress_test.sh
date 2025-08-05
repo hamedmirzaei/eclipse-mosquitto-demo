@@ -2,9 +2,9 @@
 
 # Configuration for the MQTT setup
 # Default values for a simple demo
-NUM_PUBLISHER_CLIENTS=${1:-1}         # Default to 1 MQTT client in the publisher container
-NUM_MESSAGES_PER_CLIENT=${2:-5}       # Default to 5 messages per MQTT client
-NUM_SUBSCRIBER_CLIENTS=${3:-1}        # Default to 1 MQTT client in the subscriber container
+NUM_PUBLISHER_CLIENTS=${1:-100}         # Default to 1 MQTT client in the publisher container
+NUM_MESSAGES_PER_CLIENT=${2:-10}       # Default to 5 messages per MQTT client
+NUM_SUBSCRIBER_CLIENTS=${3:-100}        # Default to 1 MQTT client in the subscriber container
 SUBSCRIBER_DURATION_SECONDS=${4:-60} # Default to subscribers listening for 60 seconds
 MQTT_TOPIC_BASE=${5:-multi_client/test} # Default base topic
 

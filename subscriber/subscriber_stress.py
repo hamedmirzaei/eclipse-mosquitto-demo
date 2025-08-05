@@ -99,7 +99,7 @@ def subscriber_loop(client, client_id_str, duration):
 
 
 def main():
-    print(f"--- Starting Multi-Client Subscriber ---")
+    print("--- Starting Multi-Client Subscriber ---")
     print(f"Number of clients to spawn: {NUM_SUBSCRIBER_CLIENTS}")
     print(f"Listen duration per client: {SUBSCRIBER_DURATION_SECONDS} seconds")
     print(f"Broker: {MQTT_BROKER}:{MQTT_PORT}, Topic: {MQTT_TOPIC_WILDCARD}")
